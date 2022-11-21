@@ -29,16 +29,16 @@ func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB)
 		for i := int64(0); i < count; i += 1000 {
 			shops, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.SHOPS_COLLECTION, i, 1000)
 			if err != nil {
-				errChannel <- err
-				return
+				log.Printf("error getting shops: %v\n", err)
+				continue
 			}
 
 			for _, shop := range shops {
 				// start transaction
 				tx, err := hanaDB.Begin()
 				if err != nil {
-					errChannel <- err
-					return
+					log.Printf("error while starting transaction: %v\n", err)
+					continue
 				}
 
 				// get shop fields
@@ -48,31 +48,29 @@ func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB)
 				// find by id, is not exists then insert, else update
 				row := tx.QueryRow("SELECT ID FROM SHOPS WHERE ID = ?", id)
 				var s interface{}
-				if err := row.Scan(&s); err != nil {
+				if err = row.Scan(&s); err != nil {
 					if err != sql.ErrNoRows {
-						errChannel <- err
-						return
+						log.Printf("error while scanning: %v\n", err)
+						continue
 					}
 
 					// insert
-					_, err = tx.Exec("INSERT INTO SHOPS (ID, NAME) VALUES (?, ?)", id, name)
-					if err != nil {
-						errChannel <- err
-						return
+					if _, err = tx.Exec("INSERT INTO SHOPS (ID, NAME) VALUES (?, ?)", id, name); err != nil {
+						log.Printf("error while inserting: %v\n", err)
+						continue
 					}
 				} else {
 					// update
-					_, err = tx.Exec("UPDATE SHOPS SET NAME = ? WHERE ID = ?", name, id)
-					if err != nil {
-						errChannel <- err
-						return
+					if _, err = tx.Exec("UPDATE SHOPS SET NAME = ? WHERE ID = ?", name, id); err != nil {
+						log.Printf("error while updating: %v\n", err)
+						continue
 					}
 				}
 
 				// commit transaction
 				if err = tx.Commit(); err != nil {
-					errChannel <- err
-					return
+					log.Printf("error while committing transaction: %v\n", err)
+					continue
 				}
 			}
 		}

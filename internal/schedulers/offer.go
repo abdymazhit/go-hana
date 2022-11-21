@@ -29,16 +29,16 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 		for i := int64(0); i < count; i += 1000 {
 			offers, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.OFFERS_COLLECTION, i, 1000)
 			if err != nil {
-				errChannel <- err
-				return
+				log.Printf("error while getting offers from MongoDB: %v\n", err)
+				continue
 			}
 
 			for _, offer := range offers {
 				// start transaction
 				tx, err := hanaDB.Begin()
 				if err != nil {
-					errChannel <- err
-					return
+					log.Printf("error while starting transaction: %v\n", err)
+					continue
 				}
 
 				// get offer fields
@@ -61,10 +61,10 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 				// find by id, if exists, update, else insert
 				row := tx.QueryRow("SELECT ID FROM OFFERS WHERE ID = ?", id)
 				var o interface{}
-				if err := row.Scan(&o); err != nil {
+				if err = row.Scan(&o); err != nil {
 					if err != sql.ErrNoRows {
-						errChannel <- err
-						return
+						log.Printf("error while scanning offer id: %v\n", err)
+						continue
 					}
 
 					// insert
@@ -74,8 +74,8 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 						id, productId, category, shopId, availabilityDate, delivery, deliveryDuration, kaspiDelivery,
 						kdDestinationCity, kdPickupDate, locatedInPoint, shopRating, shopReviewsQuantity, preorder, price)
 					if err != nil {
-						errChannel <- err
-						return
+						log.Printf("error while inserting offer: %v\n", err)
+						continue
 					}
 				} else {
 					// update
@@ -85,15 +85,15 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 						productId, category, shopId, availabilityDate, delivery, deliveryDuration, kaspiDelivery, kdDestinationCity,
 						kdPickupDate, locatedInPoint, shopRating, shopReviewsQuantity, preorder, price, id)
 					if err != nil {
-						errChannel <- err
-						return
+						log.Printf("error while updating offer: %v\n", err)
+						continue
 					}
 				}
 
 				// commit transaction
 				if err = tx.Commit(); err != nil {
-					errChannel <- err
-					return
+					log.Printf("error while committing transaction: %v\n", err)
+					continue
 				}
 			}
 		}

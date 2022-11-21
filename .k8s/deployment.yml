@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-hana-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-hana-pod
+  template:
+    metadata:
+      labels:
+        app: go-hana-pod
+    spec:
+      containers:
+        - name: go-hana-container
+          image: <IMAGE>
+          env:
+            # MongoDB env
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: go-hana-secret
+                  key: MONGO_URI
+            # HANA envs
+            - name: HANA_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: go-hana-secret
+                  key: HANA_HOST
+            - name: HANA_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: go-hana-secret
+                  key: HANA_PORT
+            - name: HANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: go-hana-secret
+                  key: HANA_USER
+            - name: HANA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: go-hana-secret
+                  key: HANA_PASSWORD
+          ports:
+            - containerPort: 9090
+      dnsPolicy: ClusterFirstWithHostNet

@@ -3,7 +3,6 @@ package schedulers
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"go-hana/internal/hana"
 	"go-hana/internal/mongodb"
 	"log"
@@ -30,16 +29,16 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 		for i := int64(0); i < count; i += 1000 {
 			shopReviews, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.SHOP_REVIEWS_COLLECTION, i, 1000)
 			if err != nil {
-				errChannel <- err
-				return
+				log.Printf("error getting shop reviews: %v\n", err)
+				continue
 			}
 
 			for _, shopReview := range shopReviews {
 				// start transaction
 				tx, err := hanaDB.Begin()
 				if err != nil {
-					errChannel <- err
-					return
+					log.Printf("error while starting transaction: %v\n", err)
+					continue
 				}
 
 				// get shop review fields
@@ -52,43 +51,43 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 
 				commentMap, ok := comment.(map[string]interface{})
 				if !ok {
-					errChannel <- fmt.Errorf("invalid comment type")
-					return
+					log.Printf("error while converting comment to map: %v\n", err)
+					continue
 				}
 				text, ok := commentMap["text"]
 				if !ok {
-					errChannel <- fmt.Errorf("invalid text type")
-					return
+					log.Printf("error while getting comment text: %v\n", err)
+					continue
 				}
 
 				// find by id, is not exists then insert, else update
 				row := tx.QueryRow("SELECT ID FROM SHOP_REVIEWS WHERE ID = ?", id)
 				var s interface{}
-				if err := row.Scan(&s); err != nil {
+				if err = row.Scan(&s); err != nil {
 					if err != sql.ErrNoRows {
-						errChannel <- err
-						return
+						log.Printf("error while scanning: %v\n", err)
+						continue
 					}
 
 					// insert
-					_, err = tx.Exec("INSERT INTO SHOP_REVIEWS (ID, SHOP_ID, RATING, AUTHOR, COMMENT, DATE) VALUES (?, ?, ?, ?, ?, ?)", id, shopId, rating, author, text, date)
-					if err != nil {
-						errChannel <- err
-						return
+					if _, err = tx.Exec("INSERT INTO SHOP_REVIEWS (ID, SHOP_ID, RATING, AUTHOR, COMMENT, DATE) VALUES (?, ?, ?, ?, ?, ?)",
+						id, shopId, rating, author, text, date); err != nil {
+						log.Printf("error while inserting shop review: %v\n", err)
+						continue
 					}
 				} else {
 					// update
-					_, err = tx.Exec("UPDATE SHOP_REVIEWS SET SHOP_ID = ?, RATING = ?, AUTHOR = ?, COMMENT = ?, DATE = ? WHERE ID = ?", shopId, rating, author, text, date, id)
-					if err != nil {
-						errChannel <- err
-						return
+					if _, err = tx.Exec("UPDATE SHOP_REVIEWS SET SHOP_ID = ?, RATING = ?, AUTHOR = ?, COMMENT = ?, DATE = ? WHERE ID = ?",
+						shopId, rating, author, text, date, id); err != nil {
+						log.Printf("error while updating shop review: %v\n", err)
+						continue
 					}
 				}
 
 				// commit transaction
 				if err = tx.Commit(); err != nil {
-					errChannel <- err
-					return
+					log.Printf("error while commiting transaction: %v\n", err)
+					continue
 				}
 			}
 		}
