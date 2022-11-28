@@ -17,7 +17,7 @@ import (
 
 var (
 	successProcessedOffersTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "processed_offers_total",
+		Name: "success_processed_offers_total",
 		Help: "The total number of successfully processed offers",
 	})
 
@@ -27,7 +27,7 @@ var (
 	})
 
 	successProcessedProductsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "processed_products_total",
+		Name: "success_processed_products_total",
 		Help: "The total number of successfully processed products",
 	})
 
@@ -37,7 +37,7 @@ var (
 	})
 
 	successProcessedShopsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "processed_shops_total",
+		Name: "success_processed_shops_total",
 		Help: "The total number of successfully processed shops",
 	})
 
@@ -47,7 +47,7 @@ var (
 	})
 
 	successProcessedShopReviewsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "processed_shop_reviews_total",
+		Name: "success_processed_shop_reviews_total",
 		Help: "The total number of successfully processed shop reviews",
 	})
 
