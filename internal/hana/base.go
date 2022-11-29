@@ -159,8 +159,7 @@ func CreateProductPromosTable(db *DB) error {
 		"CODE VARCHAR(255), " +
 		"COMMENT VARCHAR(255), " +
 		"TYPE VARCHAR(255), " +
-		"PRIORITY INTEGER, " +
-		"PRIMARY KEY (PRODUCT_ID, CODE)" +
+		"PRIORITY INTEGER" +
 		")")
 	return err
 }
