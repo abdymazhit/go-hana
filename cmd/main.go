@@ -48,11 +48,11 @@ func main() {
 	lg.Info("connected to HANA")
 
 	// run if needed
-	if err = hana.DropTables(hanaDB); err != nil {
-		lg.Fatal("error while dropping tables", zap.Error(err))
-		return
-	}
-	lg.Info("dropped tables")
+	//if err = hana.DropTables(hanaDB); err != nil {
+	//	lg.Fatal("error while dropping tables", zap.Error(err))
+	//	return
+	//}
+	//lg.Info("dropped tables")
 	if err = hana.CreateTables(hanaDB); err != nil {
 		lg.Fatal("error while creating tables", zap.Error(err))
 		return
