@@ -3,9 +3,23 @@ package schedulers
 import (
 	"context"
 	"database/sql"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go-hana/internal/hana"
 	"go-hana/internal/mongodb"
 	"log"
+)
+
+var (
+	successProcessedOffersTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "success_processed_offers_total",
+		Help: "The total number of successfully processed offers",
+	})
+
+	failedProcessedOffersTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "failed_processed_offers_total",
+		Help: "The total number of failed processed offers",
+	})
 )
 
 func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB) error {
@@ -30,6 +44,7 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 			offers, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.OFFERS_COLLECTION, i, 1000)
 			if err != nil {
 				log.Printf("error while getting offers from MongoDB: %v\n", err)
+				failedProcessedOffersTotal.Add(1000)
 				continue
 			}
 
@@ -38,6 +53,7 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 				tx, err := hanaDB.Begin()
 				if err != nil {
 					log.Printf("error while starting transaction: %v\n", err)
+					failedProcessedOffersTotal.Add(1)
 					continue
 				}
 
@@ -64,6 +80,7 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 				if err = row.Scan(&o); err != nil {
 					if err != sql.ErrNoRows {
 						log.Printf("error while scanning offer id: %v\n", err)
+						failedProcessedOffersTotal.Add(1)
 						continue
 					}
 
@@ -75,6 +92,7 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 						kdDestinationCity, kdPickupDate, locatedInPoint, shopRating, shopReviewsQuantity, preorder, price)
 					if err != nil {
 						log.Printf("error while inserting offer: %v\n", err)
+						failedProcessedOffersTotal.Add(1)
 						continue
 					}
 				} else {
@@ -86,6 +104,7 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 						kdPickupDate, locatedInPoint, shopRating, shopReviewsQuantity, preorder, price, id)
 					if err != nil {
 						log.Printf("error while updating offer: %v\n", err)
+						failedProcessedOffersTotal.Add(1)
 						continue
 					}
 				}
@@ -93,8 +112,11 @@ func NewOfferScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB
 				// commit transaction
 				if err = tx.Commit(); err != nil {
 					log.Printf("error while committing transaction: %v\n", err)
+					failedProcessedOffersTotal.Add(1)
 					continue
 				}
+
+				successProcessedOffersTotal.Add(1)
 			}
 		}
 

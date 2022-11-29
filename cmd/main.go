@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go-hana/internal/hana"
 	"go-hana/internal/mongodb"
@@ -13,48 +11,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-)
-
-var (
-	successProcessedOffersTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "success_processed_offers_total",
-		Help: "The total number of successfully processed offers",
-	})
-
-	failedProcessedOffersTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "failed_processed_offers_total",
-		Help: "The total number of failed processed offers",
-	})
-
-	successProcessedProductsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "success_processed_products_total",
-		Help: "The total number of successfully processed products",
-	})
-
-	failedProcessedProductsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "failed_processed_products_total",
-		Help: "The total number of failed processed products",
-	})
-
-	successProcessedShopsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "success_processed_shops_total",
-		Help: "The total number of successfully processed shops",
-	})
-
-	failedProcessedShopsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "failed_processed_shops_total",
-		Help: "The total number of failed processed shops",
-	})
-
-	successProcessedShopReviewsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "success_processed_shop_reviews_total",
-		Help: "The total number of successfully processed shop reviews",
-	})
-
-	failedProcessedShopReviewsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "failed_processed_shop_reviews_total",
-		Help: "The total number of failed processed shop reviews",
-	})
 )
 
 func main() {
@@ -92,16 +48,16 @@ func main() {
 	lg.Info("connected to HANA")
 
 	// run if needed
-	//if err = hana.DropTables(hanaDB); err != nil {
-	//	lg.Fatal("error while dropping tables", zap.Error(err))
-	//	return
-	//}
-	//lg.Info("dropped tables")
-	//if err = hana.CreateTables(hanaDB); err != nil {
-	//	lg.Fatal("error while creating tables", zap.Error(err))
-	//	return
-	//}
-	//lg.Info("created tables")
+	if err = hana.DropTables(hanaDB); err != nil {
+		lg.Fatal("error while dropping tables", zap.Error(err))
+		return
+	}
+	lg.Info("dropped tables")
+	if err = hana.CreateTables(hanaDB); err != nil {
+		lg.Fatal("error while creating tables", zap.Error(err))
+		return
+	}
+	lg.Info("created tables")
 
 	// metrics server
 	go func() {

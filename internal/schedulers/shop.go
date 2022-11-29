@@ -3,9 +3,23 @@ package schedulers
 import (
 	"context"
 	"database/sql"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go-hana/internal/hana"
 	"go-hana/internal/mongodb"
 	"log"
+)
+
+var (
+	successProcessedShopsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "success_processed_shops_total",
+		Help: "The total number of successfully processed shops",
+	})
+
+	failedProcessedShopsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "failed_processed_shops_total",
+		Help: "The total number of failed processed shops",
+	})
 )
 
 func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB) error {
@@ -30,6 +44,7 @@ func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB)
 			shops, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.SHOPS_COLLECTION, i, 1000)
 			if err != nil {
 				log.Printf("error getting shops: %v\n", err)
+				failedProcessedShopsTotal.Add(1000)
 				continue
 			}
 
@@ -38,6 +53,7 @@ func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB)
 				tx, err := hanaDB.Begin()
 				if err != nil {
 					log.Printf("error while starting transaction: %v\n", err)
+					failedProcessedShopsTotal.Add(1)
 					continue
 				}
 
@@ -51,18 +67,21 @@ func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB)
 				if err = row.Scan(&s); err != nil {
 					if err != sql.ErrNoRows {
 						log.Printf("error while scanning: %v\n", err)
+						failedProcessedShopsTotal.Add(1)
 						continue
 					}
 
 					// insert
 					if _, err = tx.Exec("INSERT INTO SHOPS (ID, NAME) VALUES (?, ?)", id, name); err != nil {
 						log.Printf("error while inserting: %v\n", err)
+						failedProcessedShopsTotal.Add(1)
 						continue
 					}
 				} else {
 					// update
 					if _, err = tx.Exec("UPDATE SHOPS SET NAME = ? WHERE ID = ?", name, id); err != nil {
 						log.Printf("error while updating: %v\n", err)
+						failedProcessedShopsTotal.Add(1)
 						continue
 					}
 				}
@@ -70,8 +89,11 @@ func NewShopScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB)
 				// commit transaction
 				if err = tx.Commit(); err != nil {
 					log.Printf("error while committing transaction: %v\n", err)
+					failedProcessedShopsTotal.Add(1)
 					continue
 				}
+
+				successProcessedShopsTotal.Add(1)
 			}
 		}
 

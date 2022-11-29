@@ -3,11 +3,25 @@ package schedulers
 import (
 	"context"
 	"database/sql"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go-hana/internal/hana"
 	"go-hana/internal/mongodb"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"strconv"
+)
+
+var (
+	successProcessedProductsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "success_processed_products_total",
+		Help: "The total number of successfully processed products",
+	})
+
+	failedProcessedProductsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "failed_processed_products_total",
+		Help: "The total number of failed processed products",
+	})
 )
 
 func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB) error {
@@ -32,6 +46,7 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 			products, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.PRODUCTS_COLLECTION, i, 1000)
 			if err != nil {
 				log.Printf("error getting products: %v\n", err)
+				failedProcessedProductsTotal.Add(1000)
 				continue
 			}
 
@@ -40,6 +55,7 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 				tx, err := hanaDB.Begin()
 				if err != nil {
 					log.Printf("error while starting transaction: %v\n", err)
+					failedProcessedProductsTotal.Add(1)
 					continue
 				}
 
@@ -71,11 +87,13 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 				categId, ok := catId.(string)
 				if !ok {
 					log.Printf("error while converting categoryId to string: %v\n", err)
+					failedProcessedProductsTotal.Add(1)
 					continue
 				}
 				categoryId, err := strconv.ParseInt(categId, 10, 64)
 				if err != nil {
 					log.Printf("error while converting categoryId to int: %v\n", err)
+					failedProcessedProductsTotal.Add(1)
 					continue
 				}
 
@@ -84,15 +102,18 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 				if err = tx.QueryRow("SELECT ID FROM BRANDS WHERE NAME = ?", brand).Scan(&brandId); err != nil {
 					if err != sql.ErrNoRows {
 						log.Printf("error while getting brand id: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 
 					if _, err = tx.Exec("INSERT INTO BRANDS (NAME) VALUES (?)", brand); err != nil {
 						log.Printf("error while inserting brand: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 					if err = tx.QueryRow("SELECT ID FROM BRANDS WHERE NAME = ?", brand).Scan(&brandId); err != nil {
 						log.Printf("error while getting brand id: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 				}
@@ -101,6 +122,7 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 				categories, ok := category.(primitive.A)
 				if !ok {
 					log.Printf("error while converting category to array: %v\n", err)
+					failedProcessedProductsTotal.Add(1)
 					continue
 				}
 				for _, c := range categories {
@@ -138,6 +160,7 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 				catCodes, ok := categoryCodes.(primitive.A)
 				if !ok {
 					log.Printf("error while converting categoryCodes to array: %v\n", err)
+					failedProcessedProductsTotal.Add(1)
 					continue
 				}
 				for _, catCode := range catCodes {
@@ -189,22 +212,26 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 					monthlyInstallmentMap, ok := monthlyInstallment.(map[string]interface{})
 					if !ok {
 						log.Printf("error while converting monthlyInstallment to map: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 
 					installmentId, ok := monthlyInstallmentMap["id"].(float64)
 					if !ok {
 						log.Printf("error while converting monthlyInstallment id to float: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 					installment, ok := monthlyInstallmentMap["installment"].(bool)
 					if !ok {
 						log.Printf("error while converting monthlyInstallment installment to bool: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 					formattedPerMonth, ok := monthlyInstallmentMap["formattedPerMonth"].(string)
 					if !ok {
 						log.Printf("error while converting monthlyInstallment formattedPerMonth to string: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 
@@ -212,6 +239,7 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 						"INSTALLMENT_ID, INSTALLMENT, INSTALLMENT_PER_MONTH) VALUES (?, ?, ?, ?)", id,
 						int64(installmentId), installment, formattedPerMonth); err != nil {
 						log.Printf("error while inserting product monthly installment: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 				}
@@ -221,6 +249,7 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 					promos, ok := promo.(primitive.A)
 					if !ok {
 						log.Printf("error while converting promo to array: %v\n", err)
+						failedProcessedProductsTotal.Add(1)
 						continue
 					}
 
@@ -267,8 +296,11 @@ func NewProductScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.
 				// commit transaction
 				if err = tx.Commit(); err != nil {
 					log.Printf("error commiting transaction: %v\n", err)
+					failedProcessedProductsTotal.Add(1)
 					continue
 				}
+
+				successProcessedProductsTotal.Add(1)
 			}
 		}
 

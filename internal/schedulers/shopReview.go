@@ -3,9 +3,23 @@ package schedulers
 import (
 	"context"
 	"database/sql"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go-hana/internal/hana"
 	"go-hana/internal/mongodb"
 	"log"
+)
+
+var (
+	successProcessedShopReviewsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "success_processed_shop_reviews_total",
+		Help: "The total number of successfully processed shop reviews",
+	})
+
+	failedProcessedShopReviewsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "failed_processed_shop_reviews_total",
+		Help: "The total number of failed processed shop reviews",
+	})
 )
 
 func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *hana.DB) error {
@@ -30,6 +44,7 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 			shopReviews, err := mongoDB.GetAll(ctx, mongodb.MAIN_DATABASE, mongodb.SHOP_REVIEWS_COLLECTION, i, 1000)
 			if err != nil {
 				log.Printf("error getting shop reviews: %v\n", err)
+				failedProcessedShopReviewsTotal.Add(1000)
 				continue
 			}
 
@@ -38,6 +53,7 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 				tx, err := hanaDB.Begin()
 				if err != nil {
 					log.Printf("error while starting transaction: %v\n", err)
+					failedProcessedShopReviewsTotal.Add(1)
 					continue
 				}
 
@@ -52,11 +68,13 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 				commentMap, ok := comment.(map[string]interface{})
 				if !ok {
 					log.Printf("error while converting comment to map: %v\n", err)
+					failedProcessedShopReviewsTotal.Add(1)
 					continue
 				}
 				text, ok := commentMap["text"]
 				if !ok {
 					log.Printf("error while getting comment text: %v\n", err)
+					failedProcessedShopReviewsTotal.Add(1)
 					continue
 				}
 
@@ -66,6 +84,7 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 				if err = row.Scan(&s); err != nil {
 					if err != sql.ErrNoRows {
 						log.Printf("error while scanning: %v\n", err)
+						failedProcessedShopReviewsTotal.Add(1)
 						continue
 					}
 
@@ -73,6 +92,7 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 					if _, err = tx.Exec("INSERT INTO SHOP_REVIEWS (ID, SHOP_ID, RATING, AUTHOR, COMMENT, DATE) VALUES (?, ?, ?, ?, ?, ?)",
 						id, shopId, rating, author, text, date); err != nil {
 						log.Printf("error while inserting shop review: %v\n", err)
+						failedProcessedShopReviewsTotal.Add(1)
 						continue
 					}
 				} else {
@@ -80,6 +100,7 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 					if _, err = tx.Exec("UPDATE SHOP_REVIEWS SET SHOP_ID = ?, RATING = ?, AUTHOR = ?, COMMENT = ?, DATE = ? WHERE ID = ?",
 						shopId, rating, author, text, date, id); err != nil {
 						log.Printf("error while updating shop review: %v\n", err)
+						failedProcessedShopReviewsTotal.Add(1)
 						continue
 					}
 				}
@@ -87,8 +108,11 @@ func NewShopReviewScheduler(ctx context.Context, mongoDB *mongodb.DB, hanaDB *ha
 				// commit transaction
 				if err = tx.Commit(); err != nil {
 					log.Printf("error while commiting transaction: %v\n", err)
+					failedProcessedShopReviewsTotal.Add(1)
 					continue
 				}
+
+				successProcessedShopReviewsTotal.Add(1)
 			}
 		}
 
